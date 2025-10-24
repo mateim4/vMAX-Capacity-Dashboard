@@ -1,0 +1,17 @@
+# VMAX/PowerMax Capacity Dashboard - Python Dependencies
+
+# Core PyU4V SDK for Dell PowerMax/VMAX REST API
+# This is the official Dell-maintained Python library
+PyU4V>=10.0.0
+
+# HTTP library (required by PyU4V)
+requests>=2.28.0
+
+# Data validation and settings management
+pydantic>=2.0.0
+
+# For potential future enhancements
+# pandas>=2.0.0  # For data analysis and reporting
+# openpyxl>=3.0.0  # For Excel export
+# matplotlib>=3.7.0  # For visualization
+# flask>=2.3.0  # For web dashboard

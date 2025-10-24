@@ -1,0 +1,266 @@
+# ARCHITECTURE DIAGRAM
+# VMAX/PowerMax Capacity Dashboard
+
+"""
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                         APPLICATION ARCHITECTURE                             │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                              USER INTERFACE LAYER                            │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────┐         ┌──────────────┐         ┌──────────────┐         │
+│  │   main.py   │────────▶│  Console     │         │ JSON Export  │         │
+│  │   (CLI)     │         │  Output      │         │ (Reports)    │         │
+│  └──────┬──────┘         └──────────────┘         └──────────────┘         │
+│         │                                                                    │
+└─────────┼────────────────────────────────────────────────────────────────────┘
+          │
+          │ Uses
+          ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           CONFIGURATION LAYER                                │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────┐         ┌──────────────┐         ┌──────────────┐         │
+│  │  config.py  │◀────────│ config.json  │         │ Environment  │         │
+│  │             │         │ (File)       │         │ Variables    │         │
+│  └──────┬──────┘         └──────────────┘         └──────────────┘         │
+│         │                                                                    │
+│         │ Provides UnisphereConfig                                          │
+└─────────┼────────────────────────────────────────────────────────────────────┘
+          │
+          ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          BUSINESS LOGIC LAYER                                │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────────┐       │
+│  │              VmaxCapacityCollector                                │       │
+│  │              (vmax_collector.py)                                  │       │
+│  ├──────────────────────────────────────────────────────────────────┤       │
+│  │                                                                   │       │
+│  │  __init__(host, username, password, ...)                          │       │
+│  │      └─▶ Initialize PyU4V.U4VConn                                 │       │
+│  │                                                                   │       │
+│  │  get_system_summary(array_id) ──────────┐                         │       │
+│  │  get_srp_capacity(array_id) ────────────┤                         │       │
+│  │  get_all_storage_groups(array_id) ──────┤                         │       │
+│  │  get_all_volumes(array_id) ─────────────┤                         │       │
+│  │                                         │                         │       │
+│  │  get_all_capacity_data(array_id) ◀──────┴─▶ Orchestrates All     │       │
+│  │                                                                   │       │
+│  └───────────────────────────┬───────────────────────────────────────┘       │
+│                              │                                               │
+│                              │ Returns                                       │
+│                              ▼                                               │
+│  ┌──────────────────────────────────────────────────────────────────┐       │
+│  │              Data Models (data_models.py)                         │       │
+│  ├──────────────────────────────────────────────────────────────────┤       │
+│  │  • SystemCapacity        - Array-wide metrics                     │       │
+│  │  • SrpCapacity           - Pool-level metrics                     │       │
+│  │  • StorageGroupCapacity  - Group-level metrics                    │       │
+│  │  • VolumeCapacity        - Volume-level metrics                   │       │
+│  │  • CapacitySnapshot      - Complete aggregated snapshot           │       │
+│  └──────────────────────────────────────────────────────────────────┘       │
+│                                                                              │
+└─────────┬────────────────────────────────────────────────────────────────────┘
+          │
+          │ Uses
+          ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                            API ABSTRACTION LAYER                             │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────────┐       │
+│  │                    PyU4V SDK (Dell Official)                      │       │
+│  ├──────────────────────────────────────────────────────────────────┤       │
+│  │                                                                   │       │
+│  │  PyU4V.U4VConn                                                    │       │
+│  │      │                                                            │       │
+│  │      ├─▶ conn.performance   (Legacy API)                          │       │
+│  │      │       └─▶ get_array_stats()                                │       │
+│  │      │       └─▶ get_storage_resource_pool_keys()                 │       │
+│  │      │       └─▶ get_storage_resource_pool_stats()                │       │
+│  │      │                                                            │       │
+│  │      ├─▶ conn.provisioning  (Enhanced API)                        │       │
+│  │      │       └─▶ get_storage_group_list()                         │       │
+│  │      │       └─▶ get_storage_group()                              │       │
+│  │      │       └─▶ get_volume_list()                                │       │
+│  │      │       └─▶ get_volume()                                     │       │
+│  │      │                                                            │       │
+│  │      └─▶ conn.common        (Metadata)                            │       │
+│  │              └─▶ get_array_list()                                 │       │
+│  │                                                                   │       │
+│  └───────────────────────────┬───────────────────────────────────────┘       │
+│                              │                                               │
+└──────────────────────────────┼───────────────────────────────────────────────┘
+                               │
+                               │ HTTP/HTTPS
+                               ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                         UNISPHERE REST API LAYER                             │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────────────────┐         ┌──────────────────────────┐          │
+│  │   Legacy REST API        │         │   Enhanced REST API      │          │
+│  │   /univmax/restapi/...   │         │   /univmax/rest/v1/...   │          │
+│  ├──────────────────────────┤         ├──────────────────────────┤          │
+│  │                          │         │                          │          │
+│  │ • Array Performance      │         │ • Storage Groups         │          │
+│  │ • SRP Metrics            │         │ • Volumes                │          │
+│  │ • Time-series Data       │         │ • Bulk Operations        │          │
+│  │ • Subscription Info      │         │ • Efficient Collection   │          │
+│  │                          │         │                          │          │
+│  └──────────┬───────────────┘         └───────────┬──────────────┘          │
+│             │                                     │                         │
+│             └─────────────────┬───────────────────┘                         │
+│                               │                                             │
+└───────────────────────────────┼─────────────────────────────────────────────┘
+                                │
+                                │ Port 8443 (HTTPS)
+                                ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                              STORAGE LAYER                                   │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────┐        │
+│  │              Dell PowerMax / VMAX Array                          │        │
+│  ├─────────────────────────────────────────────────────────────────┤        │
+│  │                                                                  │        │
+│  │  System                                                          │        │
+│  │    └─▶ Total Capacity: 1,000 TB                                 │        │
+│  │    └─▶ Used: 650 TB (65%)                                       │        │
+│  │                                                                  │        │
+│  │  Storage Resource Pools (SRPs)                                  │        │
+│  │    ├─▶ SRP_1: 500 TB                                            │        │
+│  │    └─▶ SRP_2: 500 TB                                            │        │
+│  │                                                                  │        │
+│  │  Storage Groups                                                 │        │
+│  │    ├─▶ Production_DB: 50 TB (100 volumes)                       │        │
+│  │    ├─▶ SAP_Storage: 45 TB (75 volumes)                          │        │
+│  │    └─▶ ... (148 more)                                           │        │
+│  │                                                                  │        │
+│  │  Volumes                                                         │        │
+│  │    └─▶ 2,500 volumes (780 TB total)                             │        │
+│  │                                                                  │        │
+│  └──────────────────────────────────────────────────────────────────┘        │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                            DATA FLOW DIAGRAM                                 │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+User runs main.py
+      │
+      ├─▶ Load config.json
+      │       └─▶ UnisphereConfig(host, port, username, password, array_id)
+      │
+      ├─▶ Create VmaxCapacityCollector
+      │       └─▶ Initialize PyU4V.U4VConn (authenticate to Unisphere)
+      │       └─▶ Test connection (get_array_list)
+      │
+      ├─▶ Call get_all_capacity_data(array_id)
+      │       │
+      │       ├─▶ get_system_summary(array_id)
+      │       │       └─▶ conn.performance.get_array_stats()
+      │       │       └─▶ Return SystemCapacity
+      │       │
+      │       ├─▶ get_srp_capacity(array_id)
+      │       │       ├─▶ conn.performance.get_storage_resource_pool_keys()
+      │       │       └─▶ For each SRP:
+      │       │           └─▶ conn.performance.get_storage_resource_pool_stats()
+      │       │       └─▶ Return List[SrpCapacity]
+      │       │
+      │       ├─▶ get_all_storage_groups(array_id)
+      │       │       ├─▶ conn.provisioning.get_storage_group_list()
+      │       │       └─▶ For each Storage Group:
+      │       │           └─▶ conn.provisioning.get_storage_group()
+      │       │       └─▶ Return List[StorageGroupCapacity]
+      │       │
+      │       ├─▶ get_all_volumes(array_id)
+      │       │       ├─▶ conn.provisioning.get_volume_list()
+      │       │       └─▶ For each Volume (with progress tracking):
+      │       │           └─▶ conn.provisioning.get_volume()
+      │       │       └─▶ Return List[VolumeCapacity]
+      │       │
+      │       └─▶ Aggregate into CapacitySnapshot
+      │
+      ├─▶ Display formatted summary to console
+      │
+      └─▶ Export to JSON file
+              └─▶ capacity_report_{array_id}_{timestamp}.json
+
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          ERROR HANDLING FLOW                                 │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Try to connect
+    │
+    ├─▶ requests.exceptions.ConnectionError
+    │       └─▶ Raise ConnectionError("Cannot connect to Unisphere")
+    │
+    ├─▶ HTTP 401 Unauthorized
+    │       └─▶ Raise AuthenticationError("Invalid credentials")
+    │
+    └─▶ Connection successful
+
+Try to collect data
+    │
+    ├─▶ PyU4V.utils.exception.VolumeBackendAPIException
+    │       └─▶ Raise DataCollectionError("API error: ...")
+    │
+    ├─▶ KeyError (missing expected field)
+    │       └─▶ Raise DataCollectionError("Missing field: ...")
+    │
+    ├─▶ Individual object failure
+    │       └─▶ Log error, continue with next object (graceful degradation)
+    │
+    └─▶ Collection successful
+
+Display results or error to user
+    │
+    └─▶ Exit with appropriate code (0 = success, 1 = error)
+
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                      HYBRID API STRATEGY RATIONALE                           │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────┐       ┌─────────────────────────────┐
+│     LEGACY REST API         │       │   ENHANCED REST API         │
+│  /univmax/restapi/{ver}/... │       │  /univmax/rest/v1/...       │
+├─────────────────────────────┤       ├─────────────────────────────┤
+│                             │       │                             │
+│ WHY USE:                    │       │ WHY USE:                    │
+│ • Only source for system    │       │ • Bulk object retrieval     │
+│   performance metrics       │       │ • Single call = all data    │
+│ • Detailed SRP subscription │       │ • Eliminates loops          │
+│ • Time-series data          │       │ • Highly efficient          │
+│                             │       │                             │
+│ USED FOR:                   │       │ USED FOR:                   │
+│ • System capacity summary   │       │ • Storage Groups            │
+│ • SRP utilization           │       │ • Volumes                   │
+│                             │       │                             │
+│ EFFICIENCY:                 │       │ EFFICIENCY:                 │
+│ • ~10 API calls total       │       │ • 1 call for list           │
+│                             │       │ • N calls for details       │
+│                             │       │   (could be optimized to 1) │
+└─────────────────────────────┘       └─────────────────────────────┘
+        │                                     │
+        └──────────────┬──────────────────────┘
+                       │
+                       ▼
+          ┌────────────────────────┐
+          │   BEST OF BOTH WORLDS  │
+          ├────────────────────────┤
+          │ • Complete coverage    │
+          │ • Maximum efficiency   │
+          │ • No deprecated APIs   │
+          │ • Future-proof         │
+          └────────────────────────┘
+"""
